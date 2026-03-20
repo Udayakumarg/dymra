@@ -5,6 +5,32 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- Safe to run multiple times
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('SUPPLIER', 'BUYER', 'ADMIN');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE supplier_status AS ENUM ('ACTIVE', 'DORMANT', 'FADING', 'GHOST', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE listing_type AS ENUM ('PRODUCT', 'SERVICE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE inquiry_status AS ENUM ('OPEN', 'RESPONDED', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE vitality_signal AS ENUM ('WA_RESPONSE', 'INQUIRY_RESPONDED', 'CATALOGUE_UPDATED', 'PHONE_VERIFIED', 'APP_LOGIN', 'INQUIRY_CREATED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE outbox_status AS ENUM ('PENDING', 'PROCESSED', 'FAILED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
 -- ── tenants ──────────────────────────────────────────────────
 CREATE TABLE tenants (
     id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

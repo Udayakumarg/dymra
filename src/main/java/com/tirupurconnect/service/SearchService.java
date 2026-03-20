@@ -1,25 +1,15 @@
 package com.tirupurconnect.service;
 
-import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.GeoLocation;
-import co.elastic.clients.elasticsearch._types.LatLonGeoLocation;
-import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.GeoDistanceQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.MultiMatchQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
-import co.elastic.clients.elasticsearch._types.query_dsl.TermQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
-import co.elastic.clients.elasticsearch.core.search.Hit;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tirupurconnect.config.AppProperties;
 import com.tirupurconnect.dto.SearchRequest;
 import com.tirupurconnect.dto.SearchResponse;
 import com.tirupurconnect.dto.SearchResultResponse;
-import com.tirupurconnect.exception.SearchException;
 import com.tirupurconnect.model.SearchLog;
 import com.tirupurconnect.model.SearchResultItem;
+import com.tirupurconnect.model.Supplier;
 import com.tirupurconnect.repository.SearchLogRepository;
 import com.tirupurconnect.repository.SearchResultItemRepository;
+import com.tirupurconnect.repository.SupplierRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
@@ -28,18 +18,18 @@ import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SearchService {
 
-    private final ElasticsearchClient        esClient;
+    private final SupplierRepository         supplierRepository;
     private final SearchLogRepository        searchLogRepository;
     private final SearchResultItemRepository searchResultItemRepository;
     private final AppProperties              props;
@@ -49,93 +39,97 @@ public class SearchService {
     private static final double          DEFAULT_LON    = 77.3411;
     private static final int             DEFAULT_RADIUS = 15;
 
-    // FIX: return type is explicitly com.tirupurconnect.dto.SearchResponse — no wildcard ES import
     @Transactional
     public SearchResponse search(SearchRequest req, String tenantId, UUID buyerId) {
-        double lat     = req.lat()       != null ? req.lat()       : DEFAULT_LAT;
-        double lon     = req.lon()       != null ? req.lon()       : DEFAULT_LON;
-        int    radius  = req.radiusKm()  != null ? req.radiusKm()  : DEFAULT_RADIUS;
-        UUID   session = req.sessionId() != null ? req.sessionId() : UUID.randomUUID();
-        short  zone    = req.zone()      != null ? req.zone()      : 1;
+        double lat    = req.lat()       != null ? req.lat()       : DEFAULT_LAT;
+        double lon    = req.lon()       != null ? req.lon()       : DEFAULT_LON;
+        int    radius = req.radiusKm()  != null ? req.radiusKm()  : DEFAULT_RADIUS;
+        UUID   session= req.sessionId() != null ? req.sessionId() : UUID.randomUUID();
+        short  zone   = req.zone()      != null ? req.zone()      : 1;
+        String query  = req.queryText() != null ? req.queryText().toLowerCase().trim() : "";
 
-        SearchLog sl = persistSearchLog(req.queryText(), tenantId, buyerId, lat, lon, zone, session);
+        // Persist search log
+        SearchLog sl = persistSearchLog(query, tenantId, buyerId, lat, lon, zone, session);
 
-        List<Hit<ObjectNode>> hits;
-        try {
-            hits = executeEsQuery(req.queryText(), tenantId, lat, lon, radius);
-        } catch (IOException e) {
-            log.error("ES query failed: tenant={} query={} error={}", tenantId, req.queryText(), e.getMessage());
-            throw new SearchException("Search temporarily unavailable", e);
-        }
+        // DB-based search — works without Elasticsearch
+        List<Supplier> allSuppliers = supplierRepository.findAll();
 
-        sl.setResultCount(hits.size());
-        sl.setZeroResult(hits.isEmpty());
+        List<Supplier> matched = allSuppliers.stream()
+            .filter(s -> s.getStatus() == Supplier.SupplierStatus.ACTIVE)
+            .filter(s -> s.getProfileCompletePct() >= 70)
+            .filter(s -> s.getTenant().getSlug().equals(tenantId))
+            .filter(s -> matchesQuery(s, query))
+            .filter(s -> withinRadius(s, lat, lon, radius))
+            .sorted((a, b) -> {
+                // Sort by trust score descending, then distance
+                int trustCmp = Short.compare(b.getTrustScore(), a.getTrustScore());
+                if (trustCmp != 0) return trustCmp;
+                return Double.compare(distanceKm(a, lat, lon), distanceKm(b, lat, lon));
+            })
+            .limit(20)
+            .collect(Collectors.toList());
+
+        // Update log
+        sl.setResultCount(matched.size());
+        sl.setZeroResult(matched.isEmpty());
         searchLogRepository.save(sl);
 
+        // Build result items
         List<SearchResultResponse> results = new ArrayList<>();
-        for (int i = 0; i < hits.size(); i++) {
-            Hit<ObjectNode> hit = hits.get(i);
-            ObjectNode src = hit.source();
-            if (src == null) continue;
-
-            UUID supplierId = UUID.fromString(src.path("supplier_id").asText());
+        for (int i = 0; i < matched.size(); i++) {
+            Supplier s = matched.get(i);
 
             SearchResultItem sri = new SearchResultItem();
             sri.setSearchLogId(sl.getId());
-            sri.setSupplierId(supplierId);
-            sri.setQueryText(req.queryText());
+            sri.setSupplierId(s.getId());
+            sri.setQueryText(query);
             sri.setPositionShown((short) (i + 1));
-            sri.setRelevanceScore(hit.score() != null ? BigDecimal.valueOf(hit.score()) : BigDecimal.ZERO);
+            sri.setRelevanceScore(BigDecimal.valueOf(s.getTrustScore()));
             searchResultItemRepository.save(sri);
 
             results.add(new SearchResultResponse(
-                supplierId,
-                src.path("business_name").asText(""),
-                src.path("type").asText(""),
-                src.path("category_slug").asText(""),
-                (short) src.path("trust_score").asInt(0),
-                0.0,
+                s.getId(),
+                s.getBusinessName(),
+                "PRODUCT",
+                "",
+                s.getTrustScore(),
+                Math.round(distanceKm(s, lat, lon) * 10.0) / 10.0,
                 null,
                 false
             ));
         }
 
-        log.info("Search complete: tenant={} query='{}' results={}", tenantId, req.queryText(), results.size());
+        log.info("Search complete: tenant={} query='{}' results={}", tenantId, query, results.size());
         return new SearchResponse(req.queryText(), results.size(), results);
     }
 
-    // Fully qualified ES SearchResponse to eliminate any ambiguity at the call site
-    private List<Hit<ObjectNode>> executeEsQuery(String queryText, String tenantId,
-                                                  double lat, double lon, int radiusKm)
-            throws IOException {
+    private boolean matchesQuery(Supplier s, String query) {
+        if (query.isBlank()) return true;
+        String name = s.getBusinessName() != null ? s.getBusinessName().toLowerCase() : "";
+        return name.contains(query);
+    }
 
-        String index = props.getElasticsearch().getIndexName();
+    private boolean withinRadius(Supplier s, double lat, double lon, int radiusKm) {
+        if (s.getLocation() == null) return true; // include if no location set
+        double dist = distanceKm(s, lat, lon);
+        return dist <= radiusKm;
+    }
 
-        Query multiMatch = MultiMatchQuery.of(m -> m
-            .query(queryText)
-            .fields("title_en^3", "description", "business_name^2")
-            .type(TextQueryType.BestFields)
-        )._toQuery();
+    private double distanceKm(Supplier s, double lat, double lon) {
+        if (s.getLocation() == null) return 0.0;
+        double sLat = s.getLocation().getY();
+        double sLon = s.getLocation().getX();
+        return haversineKm(lat, lon, sLat, sLon);
+    }
 
-        GeoLocation origin = GeoLocation.of(g -> g
-            .latlon(LatLonGeoLocation.of(ll -> ll.lat(lat).lon(lon))));
-
-        Query geoFilter     = GeoDistanceQuery.of(gd -> gd
-            .field("location").location(origin).distance(radiusKm + "km"))._toQuery();
-        Query statusFilter  = TermQuery.of(t -> t.field("status").value("active"))._toQuery();
-        Query profileFilter = TermQuery.of(t -> t.field("profile_complete").value(true))._toQuery();
-        Query tenantFilter  = TermQuery.of(t -> t.field("tenant_id").value(tenantId))._toQuery();
-
-        Query boolQuery = BoolQuery.of(b -> b
-            .must(multiMatch)
-            .filter(geoFilter, statusFilter, profileFilter, tenantFilter)
-        )._toQuery();
-
-        // Use fully-qualified ES SearchResponse here to avoid clash with dto.SearchResponse
-        co.elastic.clients.elasticsearch.core.SearchResponse<ObjectNode> esResponse =
-            esClient.search(s -> s.index(index).query(boolQuery).size(20), ObjectNode.class);
-
-        return esResponse.hits().hits();
+    private double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                 * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private SearchLog persistSearchLog(String queryText, String tenantId, UUID buyerId,
