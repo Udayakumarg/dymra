@@ -18,6 +18,18 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID> {
     List<Supplier> findSuppliersNotActiveSince(@Param("slug") String slug, @Param("before") Instant before);
 
     @Modifying
-    @Query("UPDATE Supplier s SET s.vitalityScore = :score, s.status = :status, s.updatedAt = NOW() WHERE s.id = :id")
-    void updateVitalityScoreAndStatus(@Param("id") UUID id, @Param("score") short score, @Param("status") Supplier.SupplierStatus status);
+    @Transactional
+    @Query("""
+UPDATE Supplier s
+SET s.vitalityScore = :score,
+    s.status = :status,
+    s.updatedAt = :updatedAt
+WHERE s.id = :id
+""")
+    void updateVitalityScoreAndStatus(
+            UUID id,
+            short score,
+            SupplierStatus status,
+            Instant updatedAt
+    );
 }
