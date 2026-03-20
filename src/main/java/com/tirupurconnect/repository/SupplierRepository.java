@@ -1,6 +1,7 @@
 package com.tirupurconnect.repository;
 
 import com.tirupurconnect.model.Supplier;
+import com.tirupurconnect.model.Supplier.SupplierStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -18,14 +19,15 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID> {
     @Query("SELECT s FROM Supplier s WHERE s.user.id = :userId")
     Optional<Supplier> findByUserId(@Param("userId") UUID userId);
 
-    @Query("SELECT s FROM Supplier s WHERE s.tenant.slug = :slug AND s.status NOT IN ('GHOST','CLOSED') AND s.lastActiveAt < :before")
+    @Query("SELECT s FROM Supplier s WHERE s.tenant.slug = :slug AND s.status NOT IN :excludedStatuses AND s.lastActiveAt < :before")
     List<Supplier> findSuppliersNotActiveSince(@Param("slug") String slug,
+                                                @Param("excludedStatuses") List<SupplierStatus> excludedStatuses,
                                                 @Param("before") Instant before);
 
-    // FIX: NOW() is SQL — not valid in JPQL. Use CURRENT_TIMESTAMP instead.
+    // FIX: NOW() → CURRENT_TIMESTAMP (valid JPQL)
     @Modifying
     @Query("UPDATE Supplier s SET s.vitalityScore = :score, s.status = :status, s.updatedAt = CURRENT_TIMESTAMP WHERE s.id = :id")
     void updateVitalityScoreAndStatus(@Param("id") UUID id,
                                        @Param("score") short score,
-                                       @Param("status") Supplier.SupplierStatus status);
+                                       @Param("status") SupplierStatus status);
 }

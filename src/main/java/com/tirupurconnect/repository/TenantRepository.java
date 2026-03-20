@@ -1,7 +1,9 @@
 package com.tirupurconnect.repository;
+
 import com.tirupurconnect.model.Tenant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
 import java.util.Optional;
 import java.util.UUID;
 

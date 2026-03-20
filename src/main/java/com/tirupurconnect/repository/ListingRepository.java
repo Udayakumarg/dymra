@@ -20,7 +20,7 @@ public interface ListingRepository extends JpaRepository<Listing, UUID> {
     List<Listing> findBySupplierIdAndActive(@Param("supplierId") UUID supplierId,
                                              @Param("active") boolean active);
 
-    // FIX: NOW() → CURRENT_TIMESTAMP (valid JPQL)
+    // FIX: NOW() → CURRENT_TIMESTAMP
     @Modifying
     @Query("UPDATE Listing l SET l.active = :active, l.updatedAt = CURRENT_TIMESTAMP WHERE l.supplier.id = :id")
     void setActiveForSupplier(@Param("id") UUID id, @Param("active") boolean active);

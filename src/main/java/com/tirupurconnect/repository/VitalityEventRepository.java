@@ -12,8 +12,7 @@ import java.util.UUID;
 @Repository
 public interface VitalityEventRepository extends JpaRepository<VitalityEvent, Long> {
 
-    // FIX: SUM aggregation returns Long in JPQL; declared as Long to avoid ClassCastException
-    @Query("SELECT COALESCE(SUM(v.points), 0) FROM VitalityEvent v " +
-           "WHERE v.supplierId = :id AND v.occurredAt >= :since")
+    // Returns Long — COALESCE(SUM(...)) is Long in JPQL aggregation
+    @Query("SELECT COALESCE(SUM(v.points), 0) FROM VitalityEvent v WHERE v.supplierId = :id AND v.occurredAt >= :since")
     Long sumPointsSince(@Param("id") UUID id, @Param("since") Instant since);
 }

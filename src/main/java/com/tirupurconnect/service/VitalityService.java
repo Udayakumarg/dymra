@@ -35,17 +35,13 @@ public class VitalityService {
     public void recordSignal(UUID supplierId, VitalitySignal signal, short points) {
         VitalityEvent event = new VitalityEvent(supplierId, signal, points);
         vitalityEventRepository.save(event);
-
         supplierRepository.findById(supplierId).ifPresent(s -> {
             s.setLastActiveAt(Instant.now());
             supplierRepository.save(s);
         });
-
         log.debug("Vitality signal recorded: supplier={} signal={} points={}", supplierId, signal, points);
     }
 
-    // Batch runs every Sunday 2 AM — not @Transactional at this level.
-    // recomputeScore handles its own transaction per supplier so one failure doesn't roll back all.
     @Scheduled(cron = "0 0 2 * * SUN")
     public void batchRecompute() {
         log.info("Vitality batch recompute started");
@@ -62,7 +58,7 @@ public class VitalityService {
                 log.error("Vitality recompute failed for supplier={}: {}", s.getId(), e.getMessage());
             }
         }
-        log.info("Vitality batch recompute complete: {}/{} suppliers processed", processed, suppliers.size());
+        log.info("Vitality batch recompute complete: {}/{} processed", processed, suppliers.size());
     }
 
     @Transactional
@@ -77,15 +73,13 @@ public class VitalityService {
         int windowDays = props.getVitality().getWindowDays();
         Instant windowStart = Instant.now().minus(windowDays, ChronoUnit.DAYS);
 
-        // FIX #10/#17: sumPointsSince returns Long — convert safely
         Long pointsLong = vitalityEventRepository.sumPointsSince(supplier.getId(), windowStart);
         int totalPoints = pointsLong != null ? pointsLong.intValue() : 0;
 
-        short newScore   = (short) Math.min(100, Math.max(0, totalPoints));
-        SupplierStatus newStatus = resolveStatus(newScore);
-
-        short oldScore        = supplier.getVitalityScore();
-        SupplierStatus oldStatus = supplier.getStatus();
+        short newScore     = (short) Math.min(100, Math.max(0, totalPoints));
+        SupplierStatus newStatus  = resolveStatus(newScore);
+        short oldScore     = supplier.getVitalityScore();
+        SupplierStatus oldStatus  = supplier.getStatus();
 
         supplierRepository.updateVitalityScoreAndStatus(supplier.getId(), newScore, newStatus);
 
@@ -101,7 +95,6 @@ public class VitalityService {
             tenantSlug,
             event
         );
-
         log.info("Vitality recomputed: supplier={} score={}->{} status={}->{}",
             supplier.getId(), oldScore, newScore, oldStatus, newStatus);
     }
