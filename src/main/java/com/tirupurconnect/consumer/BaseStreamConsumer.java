@@ -3,7 +3,14 @@ package com.tirupurconnect.consumer;
 import com.tirupurconnect.config.AppProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Range;
-import org.springframework.data.redis.connection.stream.*;
+import org.springframework.data.redis.connection.stream.Consumer;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.PendingMessages;
+import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.data.redis.connection.stream.StreamOffset;
+import org.springframework.data.redis.connection.stream.StreamReadOptions;
+import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
@@ -41,7 +48,8 @@ public abstract class BaseStreamConsumer {
                 ack(record.getId());
                 log.debug("Processed: group={} eventId={}", consumerGroup(), eventId);
             } catch (Exception e) {
-                log.error("Processing failed: group={} eventId={} error={}", consumerGroup(), eventId, e.getMessage());
+                log.error("Processing failed: group={} eventId={} error={}",
+                    consumerGroup(), eventId, e.getMessage());
                 handleFailure(record, eventId, e);
             }
         }
@@ -66,6 +74,7 @@ public abstract class BaseStreamConsumer {
 
     private void handleFailure(MapRecord<String, Object, Object> record, String eventId, Exception e) {
         try {
+            // FIX #27: PendingMessages now explicitly imported
             PendingMessages pending = redisTemplate().opsForStream().pending(
                 streamKey(), consumerGroup(),
                 Range.closed(record.getId().getValue(), record.getId().getValue()), 1L

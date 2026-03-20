@@ -1,7 +1,8 @@
 package com.tirupurconnect.controller;
 
-import com.tirupurconnect.dto.*;
-import com.tirupurconnect.security.AuthContext;
+import com.tirupurconnect.dto.ApiResponse;
+import com.tirupurconnect.dto.SearchRequest;
+import com.tirupurconnect.dto.SearchResponse;
 import com.tirupurconnect.security.AppPrincipal;
 import com.tirupurconnect.service.SearchService;
 import jakarta.validation.Valid;
@@ -25,9 +26,7 @@ public class SearchController {
             @Valid @ModelAttribute SearchRequest req,
             @RequestHeader(value = "X-Tenant-ID", defaultValue = "tiruppur-zone1") String tenantId) {
 
-        // buyerId is optional — anonymous searches are allowed
         UUID buyerId = resolveOptionalBuyerId();
-
         SearchResponse response = searchService.search(req, tenantId, buyerId);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }

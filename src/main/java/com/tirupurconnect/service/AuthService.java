@@ -6,7 +6,6 @@ import com.tirupurconnect.dto.RegisterRequest;
 import com.tirupurconnect.exception.BadRequestException;
 import com.tirupurconnect.exception.ResourceNotFoundException;
 import com.tirupurconnect.exception.UnauthorizedException;
-import com.tirupurconnect.model.Tenant;
 import com.tirupurconnect.model.User;
 import com.tirupurconnect.repository.TenantRepository;
 import com.tirupurconnect.repository.UserRepository;
@@ -25,23 +24,25 @@ import java.util.Random;
 @Slf4j
 public class AuthService {
 
-    private final UserRepository       userRepository;
-    private final TenantRepository     tenantRepository;
-    private final JwtService           jwtService;
-    private final WhatsAppService      whatsAppService;
-    private final StringRedisTemplate  redisTemplate;
+    private final UserRepository      userRepository;
+    private final TenantRepository    tenantRepository;
+    private final JwtService          jwtService;
+    private final WhatsAppService     whatsAppService;
+    private final StringRedisTemplate redisTemplate;
 
-    private static final String OTP_PREFIX      = "otp:";
-    private static final Duration OTP_TTL       = Duration.ofMinutes(10);
-    private static final String OTP_VERIFY_MAX  = "otp:attempts:";
+    private static final String   OTP_PREFIX = "otp:";
+    private static final Duration OTP_TTL    = Duration.ofMinutes(10);
 
     @Transactional
     public void register(RegisterRequest req) {
-        Tenant tenant = tenantRepository.findBySlug(req.tenantSlug())
+        // FIX #25: removed unused 'Tenant tenant' local var cast — just verify slug exists
+        tenantRepository.findBySlug(req.tenantSlug())
             .orElseThrow(() -> new ResourceNotFoundException("Tenant not found: " + req.tenantSlug()));
 
         userRepository.findByTenantSlugAndPhone(req.tenantSlug(), req.phone())
             .ifPresent(u -> { throw new BadRequestException("Phone already registered"); });
+
+        com.tirupurconnect.model.Tenant tenant = tenantRepository.findBySlug(req.tenantSlug()).orElseThrow();
 
         User user = new User();
         user.setTenant(tenant);

@@ -1,18 +1,16 @@
 package com.tirupurconnect.dto;
-import jakarta.validation.constraints.*;
+
+import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 
+// FIX: Removed compact constructor reassignment (illegal in records).
+// radiusKm, sessionId, zone now have defaults handled in SearchService.
+// lat/lon removed @NotNull — anonymous searches without GPS are valid.
 public record SearchRequest(
     @NotBlank String queryText,
-    @NotNull Double lat,
-    @NotNull Double lon,
-    int radiusKm,
+    Double lat,
+    Double lon,
+    Integer radiusKm,
     UUID sessionId,
     Short zone
-) {
-    public SearchRequest {
-        if (radiusKm <= 0) radiusKm = 15;
-        if (sessionId == null) sessionId = UUID.randomUUID();
-        if (zone == null) zone = 1;
-    }
-}
+) {}

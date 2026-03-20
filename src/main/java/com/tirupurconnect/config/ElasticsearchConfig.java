@@ -2,7 +2,6 @@ package com.tirupurconnect.config;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
-import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,10 +20,10 @@ import org.springframework.context.annotation.Configuration;
 public class ElasticsearchConfig {
 
     private final AppProperties props;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper  objectMapper;  // injected from RedisConfig@Bean — JavaTimeModule registered
 
     @Bean
-    public ElasticsearchClient elasticsearchClient() {
+    public RestClient elasticsearchRestClient() {
         AppProperties.Elasticsearch es = props.getElasticsearch();
 
         BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
@@ -33,17 +32,21 @@ public class ElasticsearchConfig {
             new UsernamePasswordCredentials(es.getUsername(), es.getPassword())
         );
 
-        RestClient restClient = RestClient.builder(
-                new HttpHost(es.getHost(), es.getPort(), "http"))
-            .setHttpClientConfigCallback(builder ->
-                builder.setDefaultCredentialsProvider(credentialsProvider))
+        RestClient restClient = RestClient
+            .builder(new HttpHost(es.getHost(), es.getPort(), "http"))
+            .setHttpClientConfigCallback(
+                builder -> builder.setDefaultCredentialsProvider(credentialsProvider))
             .build();
 
-        ElasticsearchTransport transport = new RestClientTransport(
+        log.info("Elasticsearch RestClient configured: {}:{}", es.getHost(), es.getPort());
+        return restClient;
+    }
+
+    @Bean
+    public ElasticsearchClient elasticsearchClient(RestClient restClient) {
+        RestClientTransport transport = new RestClientTransport(
             restClient, new JacksonJsonpMapper(objectMapper)
         );
-
-        log.info("Elasticsearch client configured: {}:{}", es.getHost(), es.getPort());
         return new ElasticsearchClient(transport);
     }
 }

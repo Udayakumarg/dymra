@@ -32,12 +32,13 @@ public class WebConfig {
         return new CorsFilter(source);
     }
 
-    /**
-     * Injects X-Request-ID and X-Tenant-ID into MDC for structured logging.
-     * Also adds them to the response header for client-side tracing.
-     */
+    // FIX #19: renamed bean and class to avoid collision with Spring Boot's built-in RequestContextFilter
+    @Bean(name = "mdcRequestContextFilter")
+    public MdcRequestContextFilter mdcRequestContextFilter() {
+        return new MdcRequestContextFilter();
+    }
 
-    public static class RequestContextFilter extends OncePerRequestFilter {
+    public static class MdcRequestContextFilter extends OncePerRequestFilter {
 
         @Override
         protected void doFilterInternal(HttpServletRequest request,
@@ -50,12 +51,11 @@ public class WebConfig {
 
             String tenantId = request.getHeader("X-Tenant-ID");
             if (tenantId == null || tenantId.isBlank()) {
-                tenantId = "tiruppur-zone1";   // default tenant
+                tenantId = "tiruppur-zone1";
             }
 
             MDC.put("requestId", requestId);
-            MDC.put("tenantId", tenantId);
-
+            MDC.put("tenantId",  tenantId);
             response.setHeader("X-Request-ID", requestId);
 
             try {

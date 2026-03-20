@@ -1,52 +1,38 @@
 package com.tirupurconnect.service;
 
-import com.tirupurconnect.model.NotificationLog;
-import com.tirupurconnect.repository.NotificationLogRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import java.util.UUID;
-
+// FIX #16: Removed NotificationLog persistence from mock impl.
+// Sentinel UUID "00000000-..." violates FK constraint on supplier_id.
+// Mock service only logs — NotificationLog is written by real impl or integration tests.
 @Service
 @ConditionalOnProperty(name = "app.whatsapp.provider", havingValue = "mock", matchIfMissing = true)
-@RequiredArgsConstructor
 @Slf4j
 public class MockWhatsAppService implements WhatsAppService {
 
-    private final NotificationLogRepository notificationLogRepository;
-
     @Override
-    public void sendInquiryNotification(String phone, String businessName, String queryText, int position) {
-        log.info("[WA-MOCK] Inquiry notification → {} | business={} query='{}' position={}",
+    public void sendInquiryNotification(String phone, String businessName,
+                                         String queryText, int position) {
+        log.info("[WA-MOCK] Inquiry notification → phone={} business='{}' query='{}' position={}",
             phone, businessName, queryText, position);
-        saveLog(phone, "INQUIRY_NOTIFICATION", true);
     }
 
     @Override
     public void sendVitalityNudge(String phone, String businessName, String status) {
-        log.info("[WA-MOCK] Vitality nudge → {} | business={} status={}", phone, businessName, status);
-        saveLog(phone, "VITALITY_NUDGE", true);
+        log.info("[WA-MOCK] Vitality nudge → phone={} business='{}' status={}",
+            phone, businessName, status);
     }
 
     @Override
     public void sendOtp(String phone, String otp) {
-        log.info("[WA-MOCK] OTP → {} | otp={}", phone, otp);
-        saveLog(phone, "OTP", true);
+        // In dev: OTP is visible in logs. Never log OTPs in production.
+        log.info("[WA-MOCK] OTP → phone={} otp={}", phone, otp);
     }
 
     @Override
     public boolean checkDelivery(String phone) {
         return true;
-    }
-
-    private void saveLog(String phone, String type, boolean delivered) {
-        // supplier_id is unknown at this layer; use a sentinel UUID for mock
-        NotificationLog log = new NotificationLog(
-            UUID.fromString("00000000-0000-0000-0000-000000000000"), type, phone
-        );
-        log.setDelivered(delivered);
-        notificationLogRepository.save(log);
     }
 }

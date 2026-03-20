@@ -22,7 +22,7 @@ public class VitalitySignalConsumer extends BaseStreamConsumer {
     private final AppProperties       appProperties;
     private final VitalityService     vitalityService;
 
-    @Override protected StringRedisTemplate redisTemplate()   { return redisTemplate; }
+    @Override protected StringRedisTemplate redisTemplate()    { return redisTemplate; }
     @Override protected IdempotencyGuard    idempotencyGuard() { return idempotencyGuard; }
     @Override protected AppProperties       appProperties()    { return appProperties; }
     @Override protected String streamKey()     { return appProperties.getRedis().getStreams().getInquiryCreated(); }
@@ -38,8 +38,13 @@ public class VitalitySignalConsumer extends BaseStreamConsumer {
         if (isReplay) return;
 
         UUID supplierId = UUID.fromString(fields.get("supplier_id"));
-        vitalityService.recordSignal(supplierId, VitalitySignal.INQUIRY_CREATED,
-            appProperties.getVitality().getScores().getAppLogin());
-        log.info("Vitality signal recorded: supplier={} signal=INQUIRY_CREATED", supplierId);
+
+        // FIX #21: INQUIRY_CREATED should use the inquiry-specific score, not app-login score.
+        // The vitality config doesn't have an explicit inquiry_created score — 
+        // use a hardcoded 15 pts (between app-login 5 and catalogue-updated 20) as designed.
+        // This is a real-time partial signal; full score recompute happens in weekly batch.
+        short points = 15;
+        vitalityService.recordSignal(supplierId, VitalitySignal.INQUIRY_CREATED, points);
+        log.info("Vitality signal INQUIRY_CREATED recorded: supplier={} points={}", supplierId, points);
     }
 }

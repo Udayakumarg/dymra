@@ -25,11 +25,11 @@ import java.util.UUID;
 @Slf4j
 public class VitalityService {
 
-    private final SupplierRepository supplierRepository;
+    private final SupplierRepository      supplierRepository;
     private final VitalityEventRepository vitalityEventRepository;
-    private final OutboxEventPublisher eventPublisher;
-    private final AppProperties props;
-    private final TenantService tenantService;
+    private final OutboxEventPublisher    eventPublisher;
+    private final AppProperties           props;
+    private final TenantService           tenantService;
 
     @Transactional
     public void recordSignal(UUID supplierId, VitalitySignal signal, short points) {
@@ -44,24 +44,25 @@ public class VitalityService {
         log.debug("Vitality signal recorded: supplier={} signal={} points={}", supplierId, signal, points);
     }
 
+    // Batch runs every Sunday 2 AM — not @Transactional at this level.
+    // recomputeScore handles its own transaction per supplier so one failure doesn't roll back all.
     @Scheduled(cron = "0 0 2 * * SUN")
-    @Transactional
     public void batchRecompute() {
         log.info("Vitality batch recompute started");
-
         List<Supplier> suppliers = supplierRepository.findAll().stream()
-                .filter(s -> s.getStatus() != SupplierStatus.CLOSED)
-                .toList();
+            .filter(s -> s.getStatus() != SupplierStatus.CLOSED)
+            .toList();
 
-        suppliers.forEach(s -> {
+        int processed = 0;
+        for (Supplier s : suppliers) {
             try {
                 recomputeScore(s);
+                processed++;
             } catch (Exception e) {
                 log.error("Vitality recompute failed for supplier={}: {}", s.getId(), e.getMessage());
             }
-        });
-
-        log.info("Vitality batch recompute complete: {} suppliers processed", suppliers.size());
+        }
+        log.info("Vitality batch recompute complete: {}/{} suppliers processed", processed, suppliers.size());
     }
 
     @Transactional
@@ -69,59 +70,47 @@ public class VitalityService {
         String tenantSlug = supplier.getTenant().getSlug();
 
         if (tenantService.isSeasonalPauseActive(tenantSlug)) {
-            log.debug("Seasonal pause active, skipping: supplier={} tenant={}", supplier.getId(), tenantSlug);
+            log.debug("Seasonal pause active, skipping: supplier={}", supplier.getId());
             return;
         }
 
         int windowDays = props.getVitality().getWindowDays();
         Instant windowStart = Instant.now().minus(windowDays, ChronoUnit.DAYS);
 
-        int totalPoints = vitalityEventRepository.sumPointsSince(supplier.getId(), windowStart);
+        // FIX #10/#17: sumPointsSince returns Long — convert safely
+        Long pointsLong = vitalityEventRepository.sumPointsSince(supplier.getId(), windowStart);
+        int totalPoints = pointsLong != null ? pointsLong.intValue() : 0;
 
-        short newScore = (short) Math.min(100, Math.max(0, totalPoints));
+        short newScore   = (short) Math.min(100, Math.max(0, totalPoints));
         SupplierStatus newStatus = resolveStatus(newScore);
 
-        short oldScore = supplier.getVitalityScore();
+        short oldScore        = supplier.getVitalityScore();
         SupplierStatus oldStatus = supplier.getStatus();
 
-        // ✅ FIXED LINE (added Instant.now())
-        supplierRepository.updateVitalityScoreAndStatus(
-                supplier.getId(),
-                newScore,
-                newStatus,
-                Instant.now()
-        );
+        supplierRepository.updateVitalityScoreAndStatus(supplier.getId(), newScore, newStatus);
 
         VitalityScoreUpdatedEvent event = VitalityScoreUpdatedEvent.of(
-                supplier.getId(),
-                tenantSlug,
-                oldScore,
-                newScore,
-                oldStatus.name(),
-                newStatus.name(),
-                "BATCH_RECOMPUTE",
-                (short) 0
+            supplier.getId(), tenantSlug,
+            oldScore, newScore,
+            oldStatus.name(), newStatus.name(),
+            "BATCH_RECOMPUTE", (short) 0
         );
-
         eventPublisher.saveToOutbox(
-                supplier.getId().toString(),
-                VitalityScoreUpdatedEvent.TYPE,
-                tenantSlug,
-                event
+            supplier.getId().toString(),
+            VitalityScoreUpdatedEvent.TYPE,
+            tenantSlug,
+            event
         );
 
-        log.info("Vitality recomputed: supplier={} {}->{}  {}->{}",
-                supplier.getId(), oldScore, newScore, oldStatus, newStatus);
+        log.info("Vitality recomputed: supplier={} score={}->{} status={}->{}",
+            supplier.getId(), oldScore, newScore, oldStatus, newStatus);
     }
 
     private SupplierStatus resolveStatus(short score) {
         AppProperties.Vitality.Thresholds t = props.getVitality().getThresholds();
-
-        if (score >= t.getActive()) return SupplierStatus.ACTIVE;
+        if (score >= t.getActive())  return SupplierStatus.ACTIVE;
         if (score >= t.getDormant()) return SupplierStatus.DORMANT;
-        if (score >= t.getFading()) return SupplierStatus.FADING;
-
+        if (score >= t.getFading())  return SupplierStatus.FADING;
         return SupplierStatus.GHOST;
     }
-
 }

@@ -26,8 +26,8 @@ import java.util.UUID;
 @Slf4j
 public class SupplierService {
 
-    private final SupplierRepository  supplierRepository;
-    private final UserRepository      userRepository;
+    private final SupplierRepository   supplierRepository;
+    private final UserRepository       userRepository;
     private final OutboxEventPublisher eventPublisher;
 
     private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
@@ -46,7 +46,12 @@ public class SupplierService {
         supplier.setBusinessName(req.businessName());
         supplier.setOwnerPhone(user.getPhone());
         supplier.setGstNumber(req.gstNumber());
-        supplier.setLocation(buildPoint(req.longitude(), req.latitude()));
+
+        // FIX #26: null guard on lat/lon — location is optional at profile creation
+        if (req.latitude() != null && req.longitude() != null) {
+            supplier.setLocation(buildPoint(req.longitude(), req.latitude()));
+        }
+
         supplier.setProfileCompletePct(computeCompleteness(req));
         supplier.recomputeTrustScore();
 
@@ -75,7 +80,7 @@ public class SupplierService {
 
         supplier.setBusinessName(req.businessName());
         if (req.gstNumber() != null) supplier.setGstNumber(req.gstNumber());
-        if (req.latitude() != null && req.longitude() != null) {
+        if (req.latitude()  != null && req.longitude() != null) {
             supplier.setLocation(buildPoint(req.longitude(), req.latitude()));
         }
         supplier.setProfileCompletePct(computeCompleteness(req));

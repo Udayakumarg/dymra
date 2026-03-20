@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -22,7 +21,6 @@ public class JwtService {
 
     private SecretKey signingKey() {
         byte[] keyBytes = props.getJwt().getSecret().getBytes(StandardCharsets.UTF_8);
-        // Ensure key is at least 256 bits for HS256
         if (keyBytes.length < 32) {
             throw new IllegalStateException("JWT secret must be at least 32 characters");
         }
@@ -31,13 +29,12 @@ public class JwtService {
 
     public String generateToken(UUID userId, String phone, String role, String tenantId) {
         long now = System.currentTimeMillis();
+        // FIX #18: Use .claim(k, v) individually — .claims(Map) resets all claims including subject.
         return Jwts.builder()
             .subject(userId.toString())
-            .claims(Map.of(
-                "phone",    phone,
-                "role",     role,
-                "tenantId", tenantId
-            ))
+            .claim("phone",    phone)
+            .claim("role",     role)
+            .claim("tenantId", tenantId)
             .issuedAt(new Date(now))
             .expiration(new Date(now + props.getJwt().getExpiryMs()))
             .signWith(signingKey())
