@@ -1,30 +1,9 @@
 -- V1__initial_schema.sql
--- TirupurConnect — initial schema
--- Requires: postgresql + postgis extension
+-- TirupurConnect — complete schema + seed data
+-- Flyway runs this once on a clean database
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgis;
-
--- ── drop all tables first (reverse dependency order) ─────────
-DROP TABLE IF EXISTS notification_log       CASCADE;
-DROP TABLE IF EXISTS outbox_events          CASCADE;
-DROP TABLE IF EXISTS vitality_events        CASCADE;
-DROP TABLE IF EXISTS search_result_item     CASCADE;
-DROP TABLE IF EXISTS search_log             CASCADE;
-DROP TABLE IF EXISTS inquiries              CASCADE;
-DROP TABLE IF EXISTS listings               CASCADE;
-DROP TABLE IF EXISTS categories             CASCADE;
-DROP TABLE IF EXISTS suppliers              CASCADE;
-DROP TABLE IF EXISTS users                  CASCADE;
-DROP TABLE IF EXISTS tenants                CASCADE;
-
--- ── drop all custom types ─────────────────────────────────────
-DROP TYPE IF EXISTS outbox_status    CASCADE;
-DROP TYPE IF EXISTS vitality_signal  CASCADE;
-DROP TYPE IF EXISTS inquiry_status   CASCADE;
-DROP TYPE IF EXISTS listing_type     CASCADE;
-DROP TYPE IF EXISTS supplier_status  CASCADE;
-DROP TYPE IF EXISTS user_role        CASCADE;
 
 -- ── tenants ──────────────────────────────────────────────────
 CREATE TABLE tenants (
@@ -38,8 +17,9 @@ CREATE TABLE tenants (
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO tenants (slug, city_name, default_zone_radius_km, vitality_weights, seasonal_pauses, search_weights)
+INSERT INTO tenants (id, slug, city_name, default_zone_radius_km, vitality_weights, seasonal_pauses, search_weights)
 VALUES (
+    'f0000000-0000-0000-0000-000000000001',
     'tiruppur-zone1',
     'Tiruppur',
     15,
@@ -63,6 +43,15 @@ CREATE TABLE users (
 );
 
 CREATE INDEX idx_users_phone ON users(phone);
+
+INSERT INTO users (id, tenant_id, phone, phone_verified, role, name)
+VALUES
+    ('a0000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001', '+919800000001', true, 'ADMIN',    'Admin User'),
+    ('a0000000-0000-0000-0000-000000000002', 'f0000000-0000-0000-0000-000000000001', '+919800000002', true, 'SUPPLIER', 'Arunachalam K'),
+    ('a0000000-0000-0000-0000-000000000003', 'f0000000-0000-0000-0000-000000000001', '+919800000003', true, 'SUPPLIER', 'Senthil Murugan'),
+    ('a0000000-0000-0000-0000-000000000004', 'f0000000-0000-0000-0000-000000000001', '+919800000004', true, 'SUPPLIER', 'Kumar Rajan'),
+    ('a0000000-0000-0000-0000-000000000005', 'f0000000-0000-0000-0000-000000000001', '+919800000005', true, 'BUYER',    'Ramesh Buyer'),
+    ('a0000000-0000-0000-0000-000000000006', 'f0000000-0000-0000-0000-000000000001', '+919800000006', true, 'BUYER',    'Priya Buyer');
 
 -- ── suppliers ────────────────────────────────────────────────
 CREATE TYPE supplier_status AS ENUM ('ACTIVE', 'DORMANT', 'FADING', 'GHOST', 'CLOSED');
@@ -93,6 +82,38 @@ CREATE INDEX idx_suppliers_location      ON suppliers USING GIST(location);
 CREATE INDEX idx_suppliers_trust         ON suppliers(trust_score DESC);
 CREATE INDEX idx_suppliers_user          ON suppliers(user_id);
 
+INSERT INTO suppliers (id, tenant_id, user_id, business_name, owner_phone, gst_number,
+    location, zone_visibility, trust_score, vitality_score, status,
+    profile_complete_pct, is_verified, export_certified, last_active_at)
+VALUES
+    (
+        'b0000000-0000-0000-0000-000000000001',
+        'f0000000-0000-0000-0000-000000000001',
+        'a0000000-0000-0000-0000-000000000002',
+        'Sri Murugan Yarn Traders', '+919800000002', '33AAAAA0001A1Z5',
+        ST_SetSRID(ST_MakePoint(77.3411, 11.1085), 4326)::geography,
+        1, 82, 75, 'ACTIVE', 100, true, false,
+        NOW() - INTERVAL '1 day'
+    ),
+    (
+        'b0000000-0000-0000-0000-000000000002',
+        'f0000000-0000-0000-0000-000000000001',
+        'a0000000-0000-0000-0000-000000000003',
+        'Arunachalam Knitting Works', '+919800000003', '33BBBBB0002B2Z6',
+        ST_SetSRID(ST_MakePoint(77.3520, 11.1150), 4326)::geography,
+        1, 75, 68, 'ACTIVE', 90, true, false,
+        NOW() - INTERVAL '2 days'
+    ),
+    (
+        'b0000000-0000-0000-0000-000000000003',
+        'f0000000-0000-0000-0000-000000000001',
+        'a0000000-0000-0000-0000-000000000004',
+        'Kumar Dyeing & Processing', '+919800000004', '33CCCCC0003C3Z7',
+        ST_SetSRID(ST_MakePoint(77.3300, 11.1020), 4326)::geography,
+        1, 68, 55, 'ACTIVE', 80, false, false,
+        NOW() - INTERVAL '5 days'
+    );
+
 -- ── categories ───────────────────────────────────────────────
 CREATE TABLE categories (
     id        SERIAL PRIMARY KEY,
@@ -102,14 +123,14 @@ CREATE TABLE categories (
     parent_id INT REFERENCES categories(id)
 );
 
-INSERT INTO categories (slug, name_en, name_ta) VALUES
-    ('yarn',        'Yarn',           NULL),
-    ('fabric',      'Fabric',         NULL),
-    ('dyeing',      'Dyeing Service', NULL),
-    ('knitting',    'Knitting',       NULL),
-    ('embroidery',  'Embroidery',     NULL),
-    ('testing-lab', 'Testing Lab',    NULL),
-    ('freight',     'Freight Agent',  NULL);
+INSERT INTO categories (slug, name_en) VALUES
+    ('yarn',        'Yarn'),
+    ('fabric',      'Fabric'),
+    ('dyeing',      'Dyeing Service'),
+    ('knitting',    'Knitting'),
+    ('embroidery',  'Embroidery'),
+    ('testing-lab', 'Testing Lab'),
+    ('freight',     'Freight Agent');
 
 -- ── listings ─────────────────────────────────────────────────
 CREATE TYPE listing_type AS ENUM ('PRODUCT', 'SERVICE');
@@ -130,6 +151,32 @@ CREATE TABLE listings (
 
 CREATE INDEX idx_listings_supplier ON listings(supplier_id);
 CREATE INDEX idx_listings_active   ON listings(is_active) WHERE is_active = TRUE;
+
+INSERT INTO listings (supplier_id, type, title_en, description, category_id, is_active)
+VALUES
+    ('b0000000-0000-0000-0000-000000000001', 'PRODUCT', 'Grey Cotton Yarn 30s Count',
+     'High quality grey cotton yarn, 30s count. Bulk from 100kg. Consistent quality.',
+     (SELECT id FROM categories WHERE slug = 'yarn'), true),
+
+    ('b0000000-0000-0000-0000-000000000001', 'PRODUCT', 'White Combed Yarn 40s Count',
+     'Premium white combed yarn, 40s count. Ideal for fine knitting. Min 50kg.',
+     (SELECT id FROM categories WHERE slug = 'yarn'), true),
+
+    ('b0000000-0000-0000-0000-000000000002', 'SERVICE', 'Circular Knitting All GSM',
+     'Circular knitting for all GSM. 20 machines. 3-day turnaround.',
+     (SELECT id FROM categories WHERE slug = 'knitting'), true),
+
+    ('b0000000-0000-0000-0000-000000000002', 'SERVICE', 'Flat Knitting Custom Designs',
+     'Flat knitting for custom patterns. Sample in 24 hours.',
+     (SELECT id FROM categories WHERE slug = 'knitting'), true),
+
+    ('b0000000-0000-0000-0000-000000000003', 'SERVICE', 'Reactive Dyeing Service',
+     'Reactive dyeing for cotton fabrics. All shades. Lab dip 24h, bulk 5 days.',
+     (SELECT id FROM categories WHERE slug = 'dyeing'), true),
+
+    ('b0000000-0000-0000-0000-000000000003', 'SERVICE', 'Pigment Dyeing Fast Turnaround',
+     'Pigment dyeing all fabric types. Excellent wash fastness. Min 50kg per shade.',
+     (SELECT id FROM categories WHERE slug = 'dyeing'), true);
 
 -- ── inquiries ────────────────────────────────────────────────
 CREATE TYPE inquiry_status AS ENUM ('OPEN', 'RESPONDED', 'CLOSED');
@@ -196,6 +243,15 @@ CREATE TABLE vitality_events (
 );
 
 CREATE INDEX idx_vitality_supplier_time ON vitality_events(supplier_id, occurred_at DESC);
+
+INSERT INTO vitality_events (supplier_id, signal, points, occurred_at) VALUES
+    ('b0000000-0000-0000-0000-000000000001', 'WA_RESPONSE',       35, NOW() - INTERVAL '2 days'),
+    ('b0000000-0000-0000-0000-000000000001', 'INQUIRY_RESPONDED', 28, NOW() - INTERVAL '5 days'),
+    ('b0000000-0000-0000-0000-000000000001', 'CATALOGUE_UPDATED', 20, NOW() - INTERVAL '10 days'),
+    ('b0000000-0000-0000-0000-000000000002', 'WA_RESPONSE',       35, NOW() - INTERVAL '3 days'),
+    ('b0000000-0000-0000-0000-000000000002', 'CATALOGUE_UPDATED', 20, NOW() - INTERVAL '7 days'),
+    ('b0000000-0000-0000-0000-000000000003', 'WA_RESPONSE',       35, NOW() - INTERVAL '6 days'),
+    ('b0000000-0000-0000-0000-000000000003', 'APP_LOGIN',          5, NOW() - INTERVAL '4 days');
 
 -- ── outbox_events ─────────────────────────────────────────────
 CREATE TYPE outbox_status AS ENUM ('PENDING', 'PROCESSED', 'FAILED');
