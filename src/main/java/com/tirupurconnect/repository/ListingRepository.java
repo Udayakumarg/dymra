@@ -13,15 +13,15 @@ import java.util.UUID;
 @Repository
 public interface ListingRepository extends JpaRepository<Listing, UUID> {
 
-    // FIX: use JPQL traversal — supplier is @ManyToOne, not a scalar supplierId field
     @Query("SELECT l FROM Listing l WHERE l.supplier.id = :supplierId")
     List<Listing> findBySupplierId(@Param("supplierId") UUID supplierId);
 
     @Query("SELECT l FROM Listing l WHERE l.supplier.id = :supplierId AND l.active = :active")
     List<Listing> findBySupplierIdAndActive(@Param("supplierId") UUID supplierId,
-                                            @Param("active") boolean active);
+                                             @Param("active") boolean active);
 
+    // FIX: NOW() → CURRENT_TIMESTAMP (valid JPQL)
     @Modifying
-    @Query("UPDATE Listing l SET l.active = :active, l.updatedAt = NOW() WHERE l.supplier.id = :id")
+    @Query("UPDATE Listing l SET l.active = :active, l.updatedAt = CURRENT_TIMESTAMP WHERE l.supplier.id = :id")
     void setActiveForSupplier(@Param("id") UUID id, @Param("active") boolean active);
 }

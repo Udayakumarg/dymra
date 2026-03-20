@@ -15,7 +15,6 @@ import java.util.UUID;
 @Repository
 public interface SupplierRepository extends JpaRepository<Supplier, UUID> {
 
-    // FIX: user is @ManyToOne, not a scalar userId field
     @Query("SELECT s FROM Supplier s WHERE s.user.id = :userId")
     Optional<Supplier> findByUserId(@Param("userId") UUID userId);
 
@@ -23,8 +22,9 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID> {
     List<Supplier> findSuppliersNotActiveSince(@Param("slug") String slug,
                                                 @Param("before") Instant before);
 
+    // FIX: NOW() is SQL — not valid in JPQL. Use CURRENT_TIMESTAMP instead.
     @Modifying
-    @Query("UPDATE Supplier s SET s.vitalityScore = :score, s.status = :status, s.updatedAt = NOW() WHERE s.id = :id")
+    @Query("UPDATE Supplier s SET s.vitalityScore = :score, s.status = :status, s.updatedAt = CURRENT_TIMESTAMP WHERE s.id = :id")
     void updateVitalityScoreAndStatus(@Param("id") UUID id,
                                        @Param("score") short score,
                                        @Param("status") Supplier.SupplierStatus status);
