@@ -42,7 +42,8 @@ spring:
       write-dates-as-timestamps: false
 
 server:
-  port: 8080
+  port: ${PORT:8080}
+  address: 0.0.0.0
   compression:
     enabled: true
     mime-types: application/json,text/plain
