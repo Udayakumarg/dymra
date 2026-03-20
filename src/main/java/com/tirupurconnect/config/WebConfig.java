@@ -1,9 +1,11 @@
 package com.tirupurconnect.config;
 
-import jakarta.servlet.*;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -18,10 +20,16 @@ import java.util.UUID;
 @Configuration
 public class WebConfig {
 
+    @Value("${app.cors.allowed-origins:*}")
+    private String allowedOrigins;
+
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+
+        // Split comma-separated origins from env var
+        List<String> origins = List.of(allowedOrigins.split(","));
+        config.setAllowedOriginPatterns(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -32,27 +40,21 @@ public class WebConfig {
         return new CorsFilter(source);
     }
 
-    // FIX #19: renamed bean and class to avoid collision with Spring Boot's built-in RequestContextFilter
     @Bean(name = "mdcRequestContextFilter")
     public MdcRequestContextFilter mdcRequestContextFilter() {
         return new MdcRequestContextFilter();
     }
 
     public static class MdcRequestContextFilter extends OncePerRequestFilter {
-
         @Override
         protected void doFilterInternal(HttpServletRequest request,
                                         HttpServletResponse response,
                                         FilterChain chain) throws ServletException, IOException {
             String requestId = request.getHeader("X-Request-ID");
-            if (requestId == null || requestId.isBlank()) {
-                requestId = UUID.randomUUID().toString();
-            }
+            if (requestId == null || requestId.isBlank()) requestId = UUID.randomUUID().toString();
 
             String tenantId = request.getHeader("X-Tenant-ID");
-            if (tenantId == null || tenantId.isBlank()) {
-                tenantId = "tiruppur-zone1";
-            }
+            if (tenantId == null || tenantId.isBlank()) tenantId = "tiruppur-zone1";
 
             MDC.put("requestId", requestId);
             MDC.put("tenantId",  tenantId);
