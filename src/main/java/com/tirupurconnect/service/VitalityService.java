@@ -3,7 +3,6 @@ package com.tirupurconnect.service;
 import com.tirupurconnect.config.AppProperties;
 import com.tirupurconnect.event.OutboxEventPublisher;
 import com.tirupurconnect.event.VitalityScoreUpdatedEvent;
-import com.tirupurconnect.exception.ResourceNotFoundException;
 import com.tirupurconnect.model.Supplier;
 import com.tirupurconnect.model.Supplier.SupplierStatus;
 import com.tirupurconnect.model.VitalityEvent;
@@ -26,16 +25,12 @@ import java.util.UUID;
 @Slf4j
 public class VitalityService {
 
-    private final SupplierRepository      supplierRepository;
+    private final SupplierRepository supplierRepository;
     private final VitalityEventRepository vitalityEventRepository;
-    private final OutboxEventPublisher    eventPublisher;
-    private final AppProperties           props;
-    private final TenantService           tenantService;
+    private final OutboxEventPublisher eventPublisher;
+    private final AppProperties props;
+    private final TenantService tenantService;
 
-    /**
-     * Records a vitality signal immediately.
-     * Called by consumers — runs in its own transaction.
-     */
     @Transactional
     public void recordSignal(UUID supplierId, VitalitySignal signal, short points) {
         VitalityEvent event = new VitalityEvent(supplierId, signal, points);
@@ -49,17 +44,14 @@ public class VitalityService {
         log.debug("Vitality signal recorded: supplier={} signal={} points={}", supplierId, signal, points);
     }
 
-    /**
-     * Batch recompute — every Sunday 2 AM (cron: "0 0 2 * * SUN").
-     * Processes all non-closed suppliers across all tenants.
-     */
     @Scheduled(cron = "0 0 2 * * SUN")
     @Transactional
     public void batchRecompute() {
         log.info("Vitality batch recompute started");
+
         List<Supplier> suppliers = supplierRepository.findAll().stream()
-            .filter(s -> s.getStatus() != SupplierStatus.CLOSED)
-            .toList();
+                .filter(s -> s.getStatus() != SupplierStatus.CLOSED)
+                .toList();
 
         suppliers.forEach(s -> {
             try {
@@ -83,37 +75,53 @@ public class VitalityService {
 
         int windowDays = props.getVitality().getWindowDays();
         Instant windowStart = Instant.now().minus(windowDays, ChronoUnit.DAYS);
+
         int totalPoints = vitalityEventRepository.sumPointsSince(supplier.getId(), windowStart);
-        short newScore  = (short) Math.min(100, Math.max(0, totalPoints));
+
+        short newScore = (short) Math.min(100, Math.max(0, totalPoints));
         SupplierStatus newStatus = resolveStatus(newScore);
 
-        short oldScore        = supplier.getVitalityScore();
+        short oldScore = supplier.getVitalityScore();
         SupplierStatus oldStatus = supplier.getStatus();
 
-        supplierRepository.updateVitalityScoreAndStatus(supplier.getId(), newScore, newStatus);
+        // ✅ FIXED LINE (added Instant.now())
+        supplierRepository.updateVitalityScoreAndStatus(
+                supplier.getId(),
+                newScore,
+                newStatus,
+                Instant.now()
+        );
 
         VitalityScoreUpdatedEvent event = VitalityScoreUpdatedEvent.of(
-            supplier.getId(), tenantSlug,
-            oldScore, newScore,
-            oldStatus.name(), newStatus.name(),
-            "BATCH_RECOMPUTE", (short) 0
+                supplier.getId(),
+                tenantSlug,
+                oldScore,
+                newScore,
+                oldStatus.name(),
+                newStatus.name(),
+                "BATCH_RECOMPUTE",
+                (short) 0
         );
+
         eventPublisher.saveToOutbox(
-            supplier.getId().toString(),
-            VitalityScoreUpdatedEvent.TYPE,
-            tenantSlug,
-            event
+                supplier.getId().toString(),
+                VitalityScoreUpdatedEvent.TYPE,
+                tenantSlug,
+                event
         );
 
         log.info("Vitality recomputed: supplier={} {}->{}  {}->{}",
-            supplier.getId(), oldScore, newScore, oldStatus, newStatus);
+                supplier.getId(), oldScore, newScore, oldStatus, newStatus);
     }
 
     private SupplierStatus resolveStatus(short score) {
         AppProperties.Vitality.Thresholds t = props.getVitality().getThresholds();
-        if (score >= t.getActive())  return SupplierStatus.ACTIVE;
+
+        if (score >= t.getActive()) return SupplierStatus.ACTIVE;
         if (score >= t.getDormant()) return SupplierStatus.DORMANT;
-        if (score >= t.getFading())  return SupplierStatus.FADING;
+        if (score >= t.getFading()) return SupplierStatus.FADING;
+
         return SupplierStatus.GHOST;
     }
+
 }
