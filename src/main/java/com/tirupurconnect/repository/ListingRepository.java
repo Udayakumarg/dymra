@@ -13,7 +13,6 @@ import java.util.UUID;
 @Repository
 public interface ListingRepository extends JpaRepository<Listing, UUID> {
 
-```
     @Modifying
     @Transactional
     @Query("""
@@ -27,6 +26,5 @@ public interface ListingRepository extends JpaRepository<Listing, UUID> {
             boolean active,
             Instant updatedAt
     );
-```
 
 }
