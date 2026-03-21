@@ -32,7 +32,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/listings/**").permitAll()
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                // Actuator — all public so health checks and UptimeRobot work
+                .requestMatchers("/actuator/**").permitAll()
                 // Role-restricted
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/v1/inquiries").hasAnyRole("BUYER", "ADMIN")
